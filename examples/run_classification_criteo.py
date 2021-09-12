@@ -6,6 +6,18 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from deepctr.models import DeepFM
 from deepctr.feature_column import SparseFeat, DenseFeat, get_feature_names
 
+# import os
+# import tensorflow as tf
+# from keras.backend.tensorflow_backend import set_session
+#
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# config = tf.ConfigProto()
+# config.gpu_options.allow_growth = True
+# config.gpu_options.per_process_gpu_memory_fraction = 0.8
+# set_session(tf.Session(config=config))
+
+
+
 if __name__ == "__main__":
     data = pd.read_csv('./criteo_sample.txt')
 
