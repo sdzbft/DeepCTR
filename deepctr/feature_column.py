@@ -10,6 +10,7 @@ from .inputs import create_embedding_matrix, embedding_lookup, get_dense_input, 
     get_varlen_pooling_list, mergeDict
 from .layers import Linear
 from .layers.utils import concat_func
+import numpy as np
 
 DEFAULT_GROUP_NAME = "default_group"
 
@@ -18,11 +19,15 @@ class SparseFeat(namedtuple('SparseFeat',
                             ['name', 'vocabulary_size', 'embedding_dim', 'use_hash', 'vocabulary_path', 'dtype', 'embeddings_initializer',
                              'embedding_name',
                              'group_name', 'trainable'])):
-    __slots__ = ()
+    # 使用__slots__要注意，__slots__定义的属性仅对当前类实例起作用，对继承的子类是不起作用的
+    # __slots__ 存在的真正原因是用于优化，否则我们是以__dict__来存储实例属性，如果我们涉及到很多需要处理的数据，使用元组来存储当然会节省时间和内存。
+    # https://www.cnblogs.com/zmc940317/p/10284560.html    廖雪峰: https://www.liaoxuefeng.com/wiki/1016959663602400/1017501655757856
+    __slots__ = ()  # 限制该class实例能添加的属性。为了达到限制的目的，Python允许在定义class的时候，定义一个特殊的slots变量，来限制该class实例能添加的属性
 
+    # https://www.jianshu.com/p/b6bc25d9c068
     def __new__(cls, name, vocabulary_size, embedding_dim=4, use_hash=False, vocabulary_path=None, dtype="int32", embeddings_initializer=None,
                 embedding_name=None,
-                group_name=DEFAULT_GROUP_NAME, trainable=True):
+                group_name=DEFAULT_GROUP_NAME, trainable=True):  # 用cls貌似是为了实现单例模式
 
         if embedding_dim == "auto":
             embedding_dim = 6 * int(pow(vocabulary_size, 0.25))
@@ -34,7 +39,7 @@ class SparseFeat(namedtuple('SparseFeat',
 
         return super(SparseFeat, cls).__new__(cls, name, vocabulary_size, embedding_dim, use_hash, vocabulary_path, dtype,
                                               embeddings_initializer,
-                                              embedding_name, group_name, trainable)
+                                              embedding_name, group_name, trainable)  # 注意这里是cls, __new__方法一定要返回一个实例对象的，只有这样，才能执行后面的__init__方法
 
     def __hash__(self):
         return self.name.__hash__()
@@ -121,20 +126,22 @@ class DenseFeat(namedtuple('DenseFeat', ['name', 'dimension', 'dtype', 'transfor
 
 
 def get_feature_names(feature_columns):
+    # print('ft_featCol_len: ', len(feature_columns)) # 78
     features = build_input_features(feature_columns)
-    return list(features.keys())
+    return list(features.keys())  # keys() 方法用于返回字典中的所有键；values() 方法用于返回字典中所有键对应的值；items() 用于返回字典中所有的键值对。
 
 
 def build_input_features(feature_columns, prefix=''):
-    input_features = OrderedDict()
+    input_features = OrderedDict()  # https://zhuanlan.zhihu.com/p/98946805   有序字典的作用只是记住元素插入顺序并按顺序输出。
     for fc in feature_columns:
         if isinstance(fc, SparseFeat):
             input_features[fc.name] = Input(
-                shape=(1,), name=prefix + fc.name, dtype=fc.dtype)
+                shape=(1,), name=prefix + fc.name, dtype=fc.dtype)   # 点进去看源码文档  https://blog.csdn.net/u013249853/article/details/88950943
+            # print("ft's input_features[fc.name]'s type: ", type(input_features[fc.name]))   # <class 'tensorflow.python.framework.ops.Tensor'>
         elif isinstance(fc, DenseFeat):
             input_features[fc.name] = Input(
                 shape=(fc.dimension,), name=prefix + fc.name, dtype=fc.dtype)
-        elif isinstance(fc, VarLenSparseFeat):
+        elif isinstance(fc, VarLenSparseFeat):  # varlen(multi-valued) sparse features
             input_features[fc.name] = Input(shape=(fc.maxlen,), name=prefix + fc.name,
                                             dtype=fc.dtype)
             if fc.weight_name is not None:
@@ -142,35 +149,39 @@ def build_input_features(feature_columns, prefix=''):
                                                        dtype="float32")
             if fc.length_name is not None:
                 input_features[fc.length_name] = Input((1,), name=prefix + fc.length_name, dtype='int32')
-
         else:
-            raise TypeError("Invalid feature column type,got", type(fc))
+            raise TypeError("Invalid feature column type, got", type(fc))
 
     return input_features
 
 
 def get_linear_logit(features, feature_columns, units=1, use_bias=False, seed=1024, prefix='linear',
                      l2_reg=0, sparse_feat_refine_weight=None):
-    linear_feature_columns = copy(feature_columns)
+    """
+    features: OrderedDict()     {name: Input}
+    feature_columns: list       [SparseFeat, DenseFeat]
+    """
+    linear_feature_columns = copy(feature_columns) # 浅复制 https://blog.csdn.net/qq_32907349/article/details/52190796  https://www.runoob.com/w3cnote/python-understanding-dict-copy-shallow-or-deep.html
     for i in range(len(linear_feature_columns)):
         if isinstance(linear_feature_columns[i], SparseFeat):
+            # namedtuple: https://blog.csdn.net/coolsunxu/article/details/105764101
             linear_feature_columns[i] = linear_feature_columns[i]._replace(embedding_dim=1,
-                                                                           embeddings_initializer=Zeros())
+                                                                           embeddings_initializer=Zeros())  # 为什么替换成0初始化, emdedding替换成了1？？
         if isinstance(linear_feature_columns[i], VarLenSparseFeat):
             linear_feature_columns[i] = linear_feature_columns[i]._replace(
                 sparsefeat=linear_feature_columns[i].sparsefeat._replace(embedding_dim=1,
                                                                          embeddings_initializer=Zeros()))
 
     linear_emb_list = [input_from_feature_columns(features, linear_feature_columns, l2_reg, seed,
-                                                  prefix=prefix + str(i))[0] for i in range(units)]
-    _, dense_input_list = input_from_feature_columns(features, linear_feature_columns, l2_reg, seed, prefix=prefix)
+                                                  prefix=prefix + str(i))[0] for i in range(units)]   # [[Embedding()(Input()), ...]]
+    _, dense_input_list = input_from_feature_columns(features, linear_feature_columns, l2_reg, seed, prefix=prefix)  # [Input(), ...]
+    # print("ft_shape: linear_emb_list: ", np.array(linear_emb_list).shape, " dense_input_list: ", np.array(dense_input_list).shape)  # linear_emb_list:  (1, 26)  dense_input_list:  (13,)
 
     linear_logit_list = []
     for i in range(units):
-
         if len(linear_emb_list[i]) > 0 and len(dense_input_list) > 0:
             sparse_input = concat_func(linear_emb_list[i])
-            dense_input = concat_func(dense_input_list)
+            dense_input = concat_func(dense_input_list)  # 把所有输入进行拼接
             if sparse_feat_refine_weight is not None:
                 sparse_input = Lambda(lambda x: x[0] * tf.expand_dims(x[1], axis=1))(
                     [sparse_input, sparse_feat_refine_weight])
@@ -193,22 +204,31 @@ def get_linear_logit(features, feature_columns, units=1, use_bias=False, seed=10
 
 def input_from_feature_columns(features, feature_columns, l2_reg, seed, prefix='', seq_mask_zero=True,
                                support_dense=True, support_group=False):
+    """
+    features: OrderedDict()     {name: Input}
+    feature_columns: list       [SparseFeat, DenseFeat]
+    """
     sparse_feature_columns = list(
         filter(lambda x: isinstance(x, SparseFeat), feature_columns)) if feature_columns else []
     varlen_sparse_feature_columns = list(
         filter(lambda x: isinstance(x, VarLenSparseFeat), feature_columns)) if feature_columns else []
 
     embedding_matrix_dict = create_embedding_matrix(feature_columns, l2_reg, seed, prefix=prefix,
-                                                    seq_mask_zero=seq_mask_zero)
-    group_sparse_embedding_dict = embedding_lookup(embedding_matrix_dict, features, sparse_feature_columns)
-    dense_value_list = get_dense_input(features, feature_columns)
+                                                    seq_mask_zero=seq_mask_zero)  # emb_dict  {name: Embedding(), ...} 创建embedding
+    # print("ft_embedding_matrix_dict: ", embedding_matrix_dict)  # {'C1': <tensorflow.python.keras.layers.embeddings.Embedding object at 0x7fdc498c8da0>, ...}
+    group_sparse_embedding_dict = embedding_lookup(embedding_matrix_dict, features, sparse_feature_columns)  # {"default_group": [Embedding()(Input()), ...], }
+    dense_value_list = get_dense_input(features, feature_columns)  # [Input(), ...]
+
     if not support_dense and len(dense_value_list) > 0:
         raise ValueError("DenseFeat is not supported in dnn_feature_columns")
 
-    sequence_embed_dict = varlen_embedding_lookup(embedding_matrix_dict, features, varlen_sparse_feature_columns)
+    # print("ft varlen_sparse_feature_columns's size: ", len(varlen_sparse_feature_columns))  # 0
+    sequence_embed_dict = varlen_embedding_lookup(embedding_matrix_dict, features, varlen_sparse_feature_columns)  # {}
     group_varlen_sparse_embedding_dict = get_varlen_pooling_list(sequence_embed_dict, features,
-                                                                 varlen_sparse_feature_columns)
-    group_embedding_dict = mergeDict(group_sparse_embedding_dict, group_varlen_sparse_embedding_dict)
+                                                                 varlen_sparse_feature_columns)  # {}
+    group_embedding_dict = mergeDict(group_sparse_embedding_dict, group_varlen_sparse_embedding_dict)  # {"default_group": [Embedding()(Input()), ...], }
     if not support_group:
-        group_embedding_dict = list(chain.from_iterable(group_embedding_dict.values()))
+        # print("ft group_embedding_dict.values() type: ", type(group_embedding_dict.values()), "content: ", group_embedding_dict.values())
+        group_embedding_dict = list(chain.from_iterable(group_embedding_dict.values()))  # https://blog.csdn.net/qq_42708830/article/details/106731144
+        # print("ft group_embedding_dict is: ", group_embedding_dict)  # [<tf.Tensor 'linearsparse_emb_C1/embedding_lookup/Identity_1:0' shape=(?, 1, 1) dtype=float32>, ...]
     return group_embedding_dict, dense_value_list

@@ -14,7 +14,7 @@ try:
 except ImportError:
     from tensorflow.python.ops.lookup_ops import HashTable as StaticHashTable
 
-
+# keras.layers.Layer    函数式编程
 class NoMask(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         super(NoMask, self).__init__(**kwargs)
@@ -113,10 +113,9 @@ class Hash(tf.keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
-class Linear(tf.keras.layers.Layer):
-
-    def __init__(self, l2_reg=0.0, mode=0, use_bias=False, seed=1024, **kwargs):
-
+class Linear(tf.keras.layers.Layer):  # keras自定义子类(模型)  自定义层
+    #        tf.keras.models.Model    # 自定义模型（重写一个模型，里面封装层）
+    def __init__(self, l2_reg=0.0, mode=0, use_bias=False, seed=1024, **kwargs): # 定义初始参数
         self.l2_reg = l2_reg
         # self.l2_reg = tf.contrib.layers.l2_regularizer(float(l2_reg_linear))
         if mode not in [0, 1, 2]:
@@ -126,7 +125,8 @@ class Linear(tf.keras.layers.Layer):
         self.seed = seed
         super(Linear, self).__init__(**kwargs)
 
-    def build(self, input_shape):
+    def build(self, input_shape):  # 定义w的权重值
+        print("ft_mode: ", self.mode, "input_shape is: ", input_shape)  # 2, [TensorShape([Dimension(None), Dimension(1), Dimension(26)]), TensorShape([Dimension(None), Dimension(13)])]
         if self.use_bias:
             self.bias = self.add_weight(name='linear_bias',
                                         shape=(1,),
@@ -146,8 +146,7 @@ class Linear(tf.keras.layers.Layer):
                 initializer=tf.keras.initializers.glorot_normal(self.seed),
                 regularizer=tf.keras.regularizers.l2(self.l2_reg),
                 trainable=True)
-
-        super(Linear, self).build(input_shape)  # Be sure to call this somewhere!
+        super(Linear, self).build(input_shape)  # Be sure to call this somewhere!    前面调用还是后面调用
 
     def call(self, inputs, **kwargs):
         if self.mode == 0:
@@ -161,6 +160,7 @@ class Linear(tf.keras.layers.Layer):
             sparse_input, dense_input = inputs
             fc = tf.tensordot(dense_input, self.kernel, axes=(-1, 0))
             linear_logit = reduce_sum(sparse_input, axis=-1, keep_dims=False) + fc
+
         if self.use_bias:
             linear_logit += self.bias
 
@@ -180,11 +180,14 @@ class Linear(tf.keras.layers.Layer):
 
 def concat_func(inputs, axis=-1, mask=False):
     if not mask:
-        inputs = list(map(NoMask(), inputs))
+        # print("before inputs: ", inputs)
+        # tmp = inputs[0]
+        inputs = list(map(NoMask(), inputs))   # ???
+        # print("after inputs:  ", inputs)
     if len(inputs) == 1:
         return inputs[0]
     else:
-        return tf.keras.layers.Concatenate(axis=axis)(inputs)
+        return tf.keras.layers.Concatenate(axis=axis)(inputs)  # 把所有输入进行一个拼接
 
 
 def reduce_mean(input_tensor,

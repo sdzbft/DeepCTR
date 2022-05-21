@@ -39,21 +39,23 @@ def DeepFM(linear_feature_columns, dnn_feature_columns, fm_group=(DEFAULT_GROUP_
     """
 
     features = build_input_features(
-        linear_feature_columns + dnn_feature_columns)
+        linear_feature_columns + dnn_feature_columns)  # OrderedDict()     {name: Input() }  获取feaatures的输入层
 
-    inputs_list = list(features.values())
-
-    linear_logit = get_linear_logit(features, linear_feature_columns, seed=seed, prefix='linear',
-                                    l2_reg=l2_reg_linear)
+    inputs_list = list(features.values())  #  values() 方法返回一个视图对象。得到所有输入层  https://www.runoob.com/python3/python3-att-dictionary-values.html
+    # print("inputs_list: ", inputs_list)  # [<tf.Tensor 'C1_3:0' shape=(?, 1) dtype=int32>, <tf.Tensor 'I6_3:0' shape=(?, 1) dtype=float32>, <tf.Tensor 'I7_3:0' shape=(?, 1) dtype=float32>, ...]
+    # print("inputs_keys: ", list(features.keys()))  # ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'C15', 'C16', 'C17', 'C18', 'C19', 'C20', 'C21', 'C22', 'C23', 'C24', 'C25', 'C26', 'I1', 'I2', 'I3', 'I4', 'I5', 'I6', 'I7', 'I8', 'I9', 'I10', 'I11', 'I12', 'I13']
 
     group_embedding_dict, dense_value_list = input_from_feature_columns(features, dnn_feature_columns, l2_reg_embedding,
                                                                         seed, support_group=True)
+
+    linear_logit = get_linear_logit(features, linear_feature_columns, seed=seed, prefix='linear',
+                                    l2_reg=l2_reg_linear)
 
     fm_logit = add_func([FM()(concat_func(v, axis=1))
                          for k, v in group_embedding_dict.items() if k in fm_group])
 
     dnn_input = combined_dnn_input(list(chain.from_iterable(
-        group_embedding_dict.values())), dense_value_list)
+        group_embedding_dict.values())), dense_value_list)  # 将输入拼接成Deep网络需要的shape
     dnn_output = DNN(dnn_hidden_units, dnn_activation, l2_reg_dnn, dnn_dropout, dnn_use_bn, seed=seed)(dnn_input)
     dnn_logit = tf.keras.layers.Dense(
         1, use_bias=False, kernel_initializer=tf.keras.initializers.glorot_normal(seed=seed))(dnn_output)
