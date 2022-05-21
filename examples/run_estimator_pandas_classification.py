@@ -56,3 +56,4 @@ if __name__ == "__main__":
     #
     print("test LogLoss", round(log_loss(test[target].values, pred_ans), 4))
     print("test AUC", round(roc_auc_score(test[target].values, pred_ans), 4))
+

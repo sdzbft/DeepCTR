@@ -2,22 +2,30 @@ import pandas as pd
 from sklearn.metrics import log_loss, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler
-
+import tensorflow as tf
 from deepctr.models import DeepFM
 from deepctr.feature_column import SparseFeat, DenseFeat, get_feature_names
 
-# 可用  开启后显存占用从 10769MiB => 803MiB
-import os
-import tensorflow as tf
-from keras.backend.tensorflow_backend import set_session
-# 指定使用哪块GPU训练
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-config = tf.ConfigProto()
-# 设置最大占有GPU不超过显存的70%
-config.gpu_options.per_process_gpu_memory_fraction = 0.2
-# 重点：设置动态分配GPU
-config.gpu_options.allow_growth = True
-set_session(tf.Session(config=config))   #
+
+# tf_1.15.4 没问题，但是tf2不行了
+# # 可用  开启后显存占用从 10769MiB => 803MiB
+# import os
+# import tensorflow as tf
+# from keras.backend.tensorflow_backend import set_session
+# # 指定使用哪块GPU训练
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# config = tf.ConfigProto()
+# # 设置最大占有GPU不超过显存的70%
+# config.gpu_options.per_process_gpu_memory_fraction = 0.2
+# # 重点：设置动态分配GPU
+# config.gpu_options.allow_growth = True
+# set_session(tf.Session(config=config))   #
+
+
+## tf2 用这个 https://blog.csdn.net/weixin_44885180/article/details/116377820
+gpus = tf.config.experimental.list_physical_devices(device_type='GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
 
 
 if __name__ == "__main__":
@@ -60,7 +68,8 @@ if __name__ == "__main__":
                   metrics=['binary_crossentropy'], )
 
     history = model.fit(train_model_input, train[target].values,
-                        batch_size=256, epochs=1000, verbose=2, validation_split=0.2, )
+                        batch_size=256, epochs=100, verbose=2, validation_split=0.2, )
     pred_ans = model.predict(test_model_input, batch_size=256)
     print("test LogLoss", round(log_loss(test[target].values, pred_ans), 4))
     print("test AUC", round(roc_auc_score(test[target].values, pred_ans), 4))
+
